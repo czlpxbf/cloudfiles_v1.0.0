@@ -22,3 +22,4 @@ scripts/_dl_*.py
 
 # Vite/Vitest 时间戳缓存
 *.timestamp-*.mjs
+.tmp-vitest-cache/

@@ -1,7 +1,7 @@
 // 版本管理（cv/rv）+ 下载 + 播放 + 搜索
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
-import { cleanVersionsSchema, renameVersionSchema, resolveHandler } from '@cloudfiles/shared';
+import { cleanVersionsSchema, renameVersionSchema } from '@cloudfiles/shared';
 import type { AppEnv, Env } from '../env';
 import { createDb } from './context';
 import { resolvePath } from './auth';
@@ -159,7 +159,21 @@ export function versionRoutes() {
     const version = versions[0];
     if (!version) return c.json({ error: '文件暂无版本' }, 404);
 
-    // mp4 直出：通过代理端点流式播放（Cloudflare 内部路由，不依赖子域名传播）
+    // 检测是否有 HLS 分片（chunks 含 .m3u8 → HLS 流播放）
+    const mem = db as unknown as { chunks?: Map<number, { chunk_index: number; path: string; size: number }[]> };
+    const chunks = mem.chunks ? mem.chunks.get(version.id) ?? [] : await fetchChunksFromD1(db, version.id);
+    const hasHls = chunks.some((ch) => ch.path.endsWith('.m3u8'));
+
+    if (hasHls) {
+      return c.json({
+        filename: found.node.name,
+        protocol: 'hls',
+        manifestUrl: `${version.deployUrl}/index.m3u8`,
+        library: 'https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js',
+      });
+    }
+
+    // mp4 直出：通过代理端点流式播放
     if (ext === 'mp4' || ext === 'webm') {
       return c.json({
         filename: found.node.name,
@@ -168,14 +182,8 @@ export function versionRoutes() {
       });
     }
 
-    // HLS/DASH 转码路径（Stage 2B）
-    const handler = resolveHandler(found.node.name);
-    return c.json({
-      filename: found.node.name,
-      protocol: handler.playable?.protocol || 'raw',
-      manifestUrl: handler.playable?.protocol === 'hls' ? `/api/files/raw?path=${encodeURIComponent(path)}&manifest=hls` : `/api/files/raw?path=${encodeURIComponent(path)}`,
-      library: handler.playable?.protocol === 'hls' ? 'https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js' : undefined,
-    });
+    // 其他格式不支持流式播放
+    return c.json({ error: '该文件类型不支持流式播放' }, 400);
   });
 
   // 清理版本（cv）：body { filePath?, target? }；filePath 必填（全盘清理 Phase 1）

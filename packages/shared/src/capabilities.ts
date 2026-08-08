@@ -51,7 +51,7 @@ export const builtinHandlers: FileTypeHandler[] = [
   { extensions: ['txt','md','json','js','ts','jsx','tsx','css','scss','html','htm','xml','yaml','yml','ini','conf','cfg','log','csv','sh','bat','py','java','c','cpp','h','hpp','go','rs','rb','php','sql','vue'], kind: 'text', preview: { mode: 'inline', proxyPath: '/api/preview' }, meta: 'none' },
   { extensions: ['jpg','jpeg','png','webp','gif','bmp','svg'], kind: 'image', preview: { mode: 'inline' }, thumb: { generator: 'client', size: 480 }, meta: 'exif' },
   { extensions: ['heic','heif'], kind: 'image', preview: { mode: 'download' }, thumb: { generator: 'cli', size: 480 }, meta: 'exif' },
-  { extensions: ['mp4','webm','mkv','mov','avi','m4v'], kind: 'video', preview: { mode: 'stream' }, thumb: { generator: 'cli', size: 480 }, meta: 'ffprobe', playable: { protocol: 'hls' } },
+  { extensions: ['mp4','webm','mkv','mov','avi','m4v'], kind: 'video', preview: { mode: 'stream' }, thumb: { generator: 'cli', size: 480 }, meta: 'ffprobe', playable: { protocol: 'raw' } }, // Stage 2B 后改为 hls
   { extensions: ['mp3','m4a','ogg','flac','wav','aac'], kind: 'audio', preview: { mode: 'stream' }, thumb: { generator: 'none' }, meta: 'ffprobe', playable: { protocol: 'raw' } },
   { extensions: ['pdf'], kind: 'document', preview: { mode: 'proxy', proxyPath: '/api/preview' }, thumb: { generator: 'none' }, meta: 'none' },
   { extensions: ['doc','docx','xls','xlsx','ppt','pptx'], kind: 'document', preview: { mode: 'download' }, thumb: { generator: 'none' }, meta: 'none' },

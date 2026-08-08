@@ -1,0 +1,15 @@
+{
+  "name": "@cloudfiles/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "cloudfiles": "./src/index.js"
+  },
+  "scripts": {
+    "cli": "node src/index.js"
+  },
+  "dependencies": {
+    "@cloudfiles/shared": "*"
+  }
+}

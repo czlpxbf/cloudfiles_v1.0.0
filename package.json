@@ -1,0 +1,21 @@
+{
+  "name": "cloudfiles",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deploy-as-storage free unlimited cloud drive on Cloudflare",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "cli"
+  ],
+  "scripts": {
+    "build": "npm run build -w @cloudfiles/shared && npm run build -w @cloudfiles/api",
+    "test": "npm run test -w @cloudfiles/shared && npm run test -w @cloudfiles/api",
+    "dev:api": "npm run dev -w @cloudfiles/api",
+    "cli": "npm run cli -w @cloudfiles/cli"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

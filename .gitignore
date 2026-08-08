@@ -1,0 +1,24 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+.wrangler/
+.dev.vars
+*.log
+.DS_Store
+update/
+download/
+chunks/
+preview_cache/
+temp-*/
+main.json
+main.json.bak
+
+# 临时诊断脚本
+scripts/_verify_*.py
+scripts/_diag_*.py
+scripts/_dl_*.py
+
+# Vite/Vitest 时间戳缓存
+*.timestamp-*.mjs

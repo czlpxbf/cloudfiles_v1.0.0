@@ -20,7 +20,8 @@ const uploadInput = ref<HTMLInputElement | null>(null);
 const { uploadTasks, uploadFiles, retryTask, cancelTask } = useUpload(currentPath, (name) => {
   notice.value = `已上传 ${name}`;
   setTimeout(() => (notice.value = ''), 3000);
-  load(currentPath.value);
+  // 延迟刷新：D1 写入可能有短暂传播延迟
+  setTimeout(() => load(currentPath.value), 500);
 });
 
 const { downloadTasks, doDownload } = useDownload(currentPath, (name) => {

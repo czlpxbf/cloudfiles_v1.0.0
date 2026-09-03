@@ -1,10 +1,22 @@
 // 认证：注册/登录/登出/me
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
-import { loginSchema, registerSchema, hashPassword, verifyPassword, signJwt } from '@cloudfiles/shared';
+import { loginSchema, registerSchema, signJwt } from '@cloudfiles/shared';
 import type { AppEnv, Env } from '../env';
 import type { Repo } from '../db';
 import { createDb } from './context';
+
+/** 调用 HashDo 做 PBKDF2（绕过 Worker 10ms CPU 限制） */
+async function hashPasswordInDo(env: Env, password: string, saltB64?: string): Promise<{ hash: string; salt: string; iterations: number }> {
+  const id = env.HASH_DO.idFromName('singleton');
+  const stub = env.HASH_DO.get(id);
+  const res = await stub.fetch('https://do/hash', {
+    method: 'POST',
+    body: JSON.stringify({ password, salt: saltB64 }),
+  });
+  if (!res.ok) throw new Error(`HashDo 失败: HTTP ${res.status}`);
+  return res.json() as Promise<{ hash: string; salt: string; iterations: number }>;
+}
 
 /** 会话 cookie（生产跨域 SameSite=None+Secure；开发 Lax） */
 function sessionCookie(env: Env, token: string, maxAge = 7 * 24 * 3600): string {
@@ -129,7 +141,8 @@ export function authRoutes() {
       return c.json({ error: '用户名已存在' }, 409);
     }
 
-    const ph = await hashPassword(password);
+    // 服务端 PBKDF2（HashDo → 30s CPU 配额，安全：密码不出 DO）
+    const ph = await hashPasswordInDo(c.env, password);
     const prefix = cfg.CF_PROJECT_PREFIX || 'cf';
     const pagesMain = `${prefix}-${username}-main`;
     const pagesData = `${prefix}-${username}-data`;
@@ -155,9 +168,10 @@ export function authRoutes() {
     const user = await db.findUserByUsername(username);
     if (!user) return c.json({ error: '用户名或密码错误' }, 401);
 
-    const [iterations, salt, hash] = user.passwordHash.split('|');
-    const ok = await verifyPassword(password, { iterations: Number(iterations), salt, hash });
-    if (!ok) return c.json({ error: '用户名或密码错误' }, 401);
+    const [iterations, salt, storedHash] = user.passwordHash.split('|');
+    // 服务端 PBKDF2 验证（HashDo → 密码不出 DO）
+    const ph = await hashPasswordInDo(c.env, password, salt);
+    if (ph.hash !== storedHash) return c.json({ error: '用户名或密码错误' }, 401);
 
     const token = await signJwt({ sub: user.id, username }, c.env.JWT_SECRET);
     c.header('Set-Cookie', sessionCookie(c.env, token));

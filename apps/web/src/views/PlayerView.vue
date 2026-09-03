@@ -43,6 +43,11 @@ async function initPlayer() {
       }
     } else if (protocol.value === 'raw') {
       videoEl.value.src = manifestUrl.value;
+      videoEl.value.addEventListener('error', () => {
+        if (videoEl.value?.error && videoEl.value.networkState === 3) {
+          error.value = '播放失败：视频编码可能不被浏览器支持（如 H.265/HEVC）。请使用 H.264 编码，或用 scripts/video-upload.mjs 自动转码后上传。';
+        }
+      }, { once: true });
     }
   } catch (e: any) {
     error.value = e?.message || '播放器初始化失败';
@@ -82,10 +87,10 @@ onMounted(async () => {
 .player-wrap { max-width: 960px; margin: 0 auto; padding: 20px 16px; }
 .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .name { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stage { background: #000; border-radius: 12px; overflow: hidden; }
-.video { width: 100%; max-height: 70vh; display: block; background: #000; }
+.stage { background: #000; border-radius: 12px; overflow: hidden; width: 100%; }
+.video { width: 100%; height: auto; max-height: 70vh; display: block; background: #000; min-height: 360px; }
 .err { color: var(--danger); padding: 20px; }
 .muted { color: var(--muted); padding: 16px; }
 .hint { font-size: 12px; margin-top: 10px; word-break: break-all; }
-.btn { border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); padding: 6px 14px; }
+.btn { border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); padding: 6px 14px; cursor: pointer; }
 </style>

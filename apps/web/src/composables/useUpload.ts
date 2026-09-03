@@ -31,14 +31,16 @@ export function useUpload(remotePath: Ref<string>, onDone: (filename: string) =>
     for (const file of Array.from(files)) {
       const task = newTask(file.name, file.size);
       try {
-        if (file.size <= DIRECT_LIMIT) {
-          await uploadSingleWithProgress(file, task);
+        const uploadFile = file;
+
+        if (uploadFile.size <= DIRECT_LIMIT) {
+          await uploadSingleWithProgress(uploadFile, task);
         } else {
-          await uploadChunked(file, task);
+          await uploadChunked(uploadFile, task);
         }
         task.progress = 1;
         task.phase = '完成';
-        onDone(file.name);
+        onDone(uploadFile.name);
       } catch (e) {
         task.phase = task.aborted ? '已取消' : '失败';
         task.error = task.aborted ? '' : (e instanceof ApiError ? e.message : '上传失败');

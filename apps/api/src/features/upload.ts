@@ -27,6 +27,37 @@ function isVideoFile(name: string): boolean {
   return ['mp4', 'webm', 'mkv', 'mov', 'avi'].includes(ext);
 }
 
+/** 判断是否图片 */
+function isImageFile(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase() || '';
+  return ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
+}
+
+/** 异步触发 MediaDo 提取元数据（不阻塞上传响应） */
+function triggerMediaExtract(env: Env, deployUrl: string, filename: string, ctx?: { waitUntil: (p: Promise<unknown>) => void }) {
+  const ct = isVideoFile(filename) ? 'video/mp4' : isImageFile(filename) ? `image/${filename.split('.').pop()}` : null;
+  if (!ct || !env.MEDIA_DO) return;
+
+  const url = deployUrl.startsWith('http') ? `${deployUrl}/${filename}` : `https://${deployUrl}/${filename}`;
+  const doId = env.MEDIA_DO.newUniqueId();
+  const stub = env.MEDIA_DO.get(doId);
+
+  const task = stub.fetch('https://do/metadata', {
+    method: 'POST',
+    body: JSON.stringify({ url, contentType: ct }),
+  }).then(async (res) => {
+    if (res.ok) {
+      const data = await res.json() as Record<string, unknown>;
+      if (!data.skipped) console.log('[MediaDo] 元数据提取完成:', filename, data);
+    }
+  }).catch((e) => {
+    console.warn('[MediaDo] 元数据提取失败（非阻塞）:', filename, (e as Error).message);
+  });
+
+  if (ctx?.waitUntil) ctx.waitUntil(task);
+  else task.catch(() => {}); // 没有 ctx 时静默 fire-and-forget
+}
+
 const CF_API = 'https://api.cloudflare.com/client/v4';
 const kvChunkKey = (userId: number, uploadId: string, index: number) => `up:${userId}:${uploadId}:${index}`;
 
@@ -144,6 +175,11 @@ export function uploadRoutes() {
     });
     await db.addChunks(version.id, [{ index: 0, path: filename, size }]);
     await db.updateModified(fileNode.id, ts);
+
+    // 异步触发 MediaDo 提取元数据（非阻塞）
+    if (isVideoFile(filename) || isImageFile(filename)) {
+      triggerMediaExtract(c.env, deploy.baseUrl, filename, c.executionCtx as { waitUntil: (p: Promise<unknown>) => void } | undefined);
+    }
 
     return c.json({ ok: true, fileId: fileNode.id, versionId: version.id, deployUrl: deploy.baseUrl }, 201);
   });
@@ -353,6 +389,11 @@ export function uploadRoutes() {
     // 清理 KV 分片 + 标记任务完成
     await Promise.all(chunks.map((_, i) => kv.delete(kvChunkKey(userId, uploadId, i))));
     await db.updateUploadSessionStatus(userId, uploadId, 'done');
+
+    // 异步触发 MediaDo 提取元数据（非阻塞）
+    if (isVideoFile(session.filename) || isImageFile(session.filename)) {
+      triggerMediaExtract(c.env, deploy.baseUrl, session.filename, c.executionCtx as { waitUntil: (p: Promise<unknown>) => void } | undefined);
+    }
 
     return c.json({ ok: true, fileId: fileNode.id, versionId: version.id, deployUrl: deploy.baseUrl, chunkCount: session.totalChunks }, 201);
   });

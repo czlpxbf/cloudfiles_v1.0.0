@@ -4,6 +4,9 @@ import type { StorageAdapter } from '@cloudfiles/shared';
 export interface Env {
   DB: D1Database;
   KV: KVNamespace;
+  // Durable Objects（绕过 Worker 10ms CPU 限制）
+  HASH_DO: DurableObjectNamespace;
+  MEDIA_DO: DurableObjectNamespace;
   // 生产注入的 secrets
   CLOUDFLARE_ACCOUNT_ID: string;
   CLOUDFLARE_API_TOKEN: string;

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 build/
+public/
 .env
 .env.local
 .wrangler/
@@ -15,10 +16,8 @@ temp-*/
 main.json
 main.json.bak
 
-# 临时诊断脚本
-scripts/_verify_*.py
-scripts/_diag_*.py
-scripts/_dl_*.py
+# 临时诊断脚本（下划线开头的 .py 一律忽略）
+scripts/_*.py
 
 # Vite/Vitest 时间戳缓存
 *.timestamp-*.mjs

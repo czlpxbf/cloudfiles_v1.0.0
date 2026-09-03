@@ -1,0 +1,39 @@
+name = "cloudfiles-web"
+main = "apps/api/src/index.ts"
+compatibility_date = "2025-01-01"
+
+# Workers Static Assets — 前端构建产物目录
+[assets]
+directory = "./public"
+
+# D1 数据库（文件树/用户/元数据）
+[[d1_databases]]
+binding = "DB"
+database_name = "cloudfiles-db"
+database_id = "8e717e13-cb12-4efb-a2b5-842899562a5e"
+
+# KV（上传任务/索引缓存）
+[[kv_namespaces]]
+binding = "KV"
+id = "87e9c6e7d22e4919a42e3a1a3720575f"
+
+# Durable Objects（绕过 Worker 10ms CPU 限制：HashDo=密码哈希，MediaDo=缩略图元数据）
+[[durable_objects.bindings]]
+name = "HASH_DO"
+class_name = "HashDo"
+
+[[durable_objects.bindings]]
+name = "MEDIA_DO"
+class_name = "MediaDo"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["HashDo", "MediaDo"]
+
+# 自定义域名路由
+[[routes]]
+pattern = "zz2z.eu.cc/*"
+zone_id = "ef58acb93680557d7d54e888dfd5f0d8"
+
+# 环境变量（部署时用 wrangler secret put 注入，勿写明文）：
+#   CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN / JWT_SECRET / CF_PROJECT_PREFIX / CF_ENV / CF_ALLOWED_ORIGINS

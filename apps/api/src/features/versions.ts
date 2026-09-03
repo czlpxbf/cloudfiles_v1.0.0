@@ -90,38 +90,109 @@ export function versionRoutes() {
     const chunks = mem.chunks ? mem.chunks.get(version.id) ?? [] : await fetchChunksFromD1(db, version.id);
     if (chunks.length === 0) return c.json({ error: '文件无分片数据' }, 500);
 
-    // 单分片模式（指定 chunk=N）
-    if (singleChunk != null) {
-      if (singleChunk >= chunks.length) return c.json({ error: `分片索引越界: ${singleChunk}` }, 400);
-      const ch = chunks[singleChunk];
+    // 单分片文件（≤24MB）：Pages 部署 URL 的 Range 支持不稳定，回退到全量流式
+    if (chunks.length === 1) {
+      const ch = chunks[0];
+      const ext = found.node.name.split('.').pop()?.toLowerCase() || '';
       const res = await fetch(storage.buildFileUrl(version.deployUrl, ch.path));
-      if (!res.ok) return c.json({ error: `代理下载失败: HTTP ${res.status}` }, 502);
-      const headers = new Headers();
-      const ct = res.headers.get('Content-Type');
-      if (ct) headers.set('Content-Type', ct);
-      return new Response(res.body, { status: 200, headers });
+      if (!res.ok || !res.body) return c.json({ error: `代理下载失败: HTTP ${res.status}` }, 502);
+      return new Response(res.body, {
+        status: 200,
+        headers: {
+          'Content-Type': guessContentType(ext),
+          'Content-Length': String(ch.size),
+        },
+      });
     }
 
-    // 全量拼接模式（未指定 chunk → 流式拼接全部分片，播放/预览/下载用）
+    // 多分片拼接 / Range 请求模式
     const ext = found.node.name.split('.').pop()?.toLowerCase() || '';
-    const ct = guessContentType(ext);
     const contentLength = chunks.reduce((s, c) => s + c.size, 0);
+    const ct = guessContentType(ext);
+
+    // 构建 chunk → 累计字节偏移（用于 Range 定位）
+    const offsets: number[] = [];
+    let cum = 0;
+    for (const ch of chunks) { offsets.push(cum); cum += ch.size; }
+
+    // 解析 Range 请求头
+    const rangeHeader = c.req.header('Range');
+    let rangeStart = 0;
+    let rangeEnd = contentLength - 1;
+    let isRange = false;
+
+    if (rangeHeader) {
+      const m = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      if (m) {
+        rangeStart = parseInt(m[1], 10);
+        rangeEnd = m[2] ? parseInt(m[2], 10) : contentLength - 1;
+        if (rangeStart < contentLength && rangeEnd >= rangeStart) {
+          isRange = true;
+        } else {
+          rangeStart = 0; rangeEnd = contentLength - 1;
+        }
+      }
+    }
+
+    // 找到 Range 覆盖的 chunk 范围
+    let firstChunkIdx = 0, lastChunkIdx = chunks.length - 1;
+    let skipBytes = 0, takeBytesInLast = chunks[lastChunkIdx]?.size ?? 0;
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkEnd = offsets[i] + chunks[i].size - 1;
+      if (rangeStart >= offsets[i] && rangeStart <= chunkEnd) {
+        firstChunkIdx = i;
+        skipBytes = rangeStart - offsets[i];
+      }
+      if (rangeEnd >= offsets[i] && rangeEnd <= chunkEnd) {
+        lastChunkIdx = i;
+        takeBytesInLast = rangeEnd - offsets[i] + 1;
+      }
+    }
 
     const stream = new ReadableStream({
       async start(controller) {
-        for (let i = 0; i < chunks.length; i++) {
+        for (let i = firstChunkIdx; i <= lastChunkIdx; i++) {
           const ch = chunks[i];
           try {
-            const res = await fetch(storage.buildFileUrl(version.deployUrl, ch.path));
+            // 透传 Range 到 Pages CDN（避免拉整个 24MB 分片）
+            const fetchHeaders = new Headers();
+            let readerTake = ch.size;
+
+            if (i === firstChunkIdx && i === lastChunkIdx) {
+              // 单分片：同时处理首尾
+              if (skipBytes > 0 || takeBytesInLast < ch.size) {
+                const end = skipBytes + takeBytesInLast - 1;
+                fetchHeaders.set('Range', `bytes=${skipBytes}-${end}`);
+                readerTake = takeBytesInLast;
+              }
+            } else if (i === firstChunkIdx && skipBytes > 0) {
+              fetchHeaders.set('Range', `bytes=${skipBytes}-`);
+            } else if (i === lastChunkIdx && takeBytesInLast < ch.size) {
+              fetchHeaders.set('Range', `bytes=0-${takeBytesInLast - 1}`);
+              readerTake = takeBytesInLast;
+            }
+
+            const res = await fetch(storage.buildFileUrl(version.deployUrl, ch.path), { headers: fetchHeaders });
             if (!res.ok || !res.body) {
               controller.error(new Error(`分片 ${i} 下载失败: HTTP ${res.status}`));
               return;
             }
             const reader = res.body.getReader();
+            let chunkRead = 0;
+
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
-              controller.enqueue(value);
+              let bytes = value;
+
+              if (i === lastChunkIdx) {
+                const remaining = readerTake - chunkRead;
+                if (remaining <= 0) break;
+                if (bytes.length > remaining) bytes = bytes.subarray(0, remaining);
+              }
+
+              chunkRead += bytes.length;
+              controller.enqueue(bytes);
             }
           } catch (e) {
             controller.error(e);
@@ -131,6 +202,19 @@ export function versionRoutes() {
         controller.close();
       },
     });
+
+    if (isRange) {
+      const rangeLen = rangeEnd - rangeStart + 1;
+      return new Response(stream, {
+        status: 206,
+        headers: {
+          'Content-Type': ct,
+          'Content-Range': `bytes ${rangeStart}-${rangeEnd}/${contentLength}`,
+          'Content-Length': String(rangeLen),
+          'Accept-Ranges': 'bytes',
+        },
+      });
+    }
 
     return new Response(stream, {
       status: 200,
@@ -237,6 +321,44 @@ export function versionRoutes() {
     if (!q) return c.json({ error: '缺少 q' }, 400);
     const results = await db.searchByName(userId, q);
     return c.json({ q, results });
+  });
+
+  // 缩略图代理（通过 MediaDo 提取）?path=/image.jpg
+  app.get('/thumbnail', async (c) => {
+    const db = createDb(c.env);
+    const storage = getStorage(c.env);
+    const userId = c.get('userId');
+    const path = c.req.query('path');
+    if (!path) return c.json({ error: '缺少 path' }, 400);
+
+    const found = await resolvePath(db, userId, path);
+    if (!found?.node || found.node.type !== 'file') return c.json({ error: `文件不存在: ${path}` }, 404);
+
+    const versions = await db.listVersions(found.node.id);
+    const version = versions[0];
+    if (!version) return c.json({ error: '文件暂无版本' }, 404);
+
+    // 通过 MediaDo 获取缩略图（异步但不阻塞——直接返回原图 URL 兜底）
+    try {
+      const mem = db as unknown as { chunks?: Map<number, { chunk_index: number; path: string; size: number }[]> };
+      const chunks = mem.chunks ? mem.chunks.get(version.id) ?? [] : await fetchChunksFromD1(db, version.id);
+      const fileUrl = chunks.length > 0 ? storage.buildFileUrl(version.deployUrl, chunks[0].path) : version.deployUrl;
+
+      const doId = c.env.MEDIA_DO.newUniqueId();
+      const stub = c.env.MEDIA_DO.get(doId);
+      const res = await stub.fetch('https://do/metadata', {
+        method: 'POST',
+        body: JSON.stringify({ url: fileUrl, contentType: guessContentType(path.split('.').pop() || '') }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { thumbnail?: string; width?: number; height?: number };
+        if (data.thumbnail) return c.json({ thumbnail: data.thumbnail, width: data.width, height: data.height });
+      }
+    } catch {
+      // MediaDo 不可用 → 返回原图 URL 让前端直接渲染
+    }
+
+    return c.json({ thumbnail: null, fallbackUrl: `${version.deployUrl}/${found.node.name}` });
   });
 
   return app;

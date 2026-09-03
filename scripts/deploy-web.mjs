@@ -39,6 +39,7 @@ await build({
   platform: 'browser',
   target: 'es2022',
   outfile: workerOut,
+  external: ['cloudflare:workers'], // DO import, Cloudflare 运行时注入
   alias: { '@cloudfiles/shared': path.join(__dirname, '..', 'packages', 'shared', 'src', 'index.ts') },
   logLevel: 'error',
 });

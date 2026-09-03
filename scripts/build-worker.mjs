@@ -16,6 +16,7 @@ await build({
   outfile: path.join(outDir, 'worker.js'),
   sourcemap: false,
   minify: false,
+  external: ['cloudflare:workers'], // DO import, Cloudflare 运行时注入
   // 直接用 shared 源码（避免依赖 tsc dist 产物）
   alias: {
     '@cloudfiles/shared': path.join(__dirname, '..', 'packages', 'shared', 'src', 'index.ts'),

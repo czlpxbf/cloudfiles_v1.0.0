@@ -64,7 +64,7 @@ function fmtBytes(n: number): string {
       <span class="name" :title="filename">{{ filename }}</span>
       <span v-if="error" class="phase err-text">{{ error }}</span>
       <span v-else class="phase">
-        {{ phase || '上传中' }} {{ pct > 0 ? pct + '%' : '' }}
+        {{ phase || '上传中' }} {{ pct > 0 ? pct + '%' : progress > 0 ? Math.round(progress * 100) + '%' : '' }}
         <template v-if="total > 0">（{{ fmtBytes(loaded) }}/{{ fmtBytes(total) }}）</template>
         <template v-if="speedText"> {{ speedText }}</template>
       </span>
